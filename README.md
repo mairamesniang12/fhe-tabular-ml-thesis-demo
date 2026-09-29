@@ -6,7 +6,7 @@ inference using **Fully Homomorphic Encryption (FHE)**, built with
 deployed on [Streamlit Community Cloud](https://streamlit.io/cloud).
 
 Part of the MSc thesis *"Efficient Privacy-Preserving ML Using
-Tree-Based and Hybrid Models Under FHE"* — Mairame Samba NIANG,
+Tree-Based and Hybrid Models Under FHE"* - Mairame Samba NIANG,
 supervised by Dr. Célestin Wafo Soh, AIMS Sénégal, 2025–2026.
 
 ## What this demonstrates
@@ -92,7 +92,7 @@ and not committed to this repository.
    app pointing at `streamlit_app.py`.
 3. In advanced settings, make sure Python 3.11 is selected.
 4. Deploy. The first build installs Concrete-ML and XGBoost and runs
-   `prepare_model.py` once — expect the first load to be slow.
+   `prepare_model.py` once expect the first load to be slow.
 
 If the app hits the platform's free-tier resource limits, reduce the
 `MODEL_CONFIGS` dictionary in `prepare_model.py` to fewer models (e.g.
