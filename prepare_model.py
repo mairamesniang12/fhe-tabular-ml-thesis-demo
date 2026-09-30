@@ -56,18 +56,18 @@ MODEL_CONFIGS = {
         "key": "rf",
         "plain_cls": RandomForestClassifier,
         "fhe_cls": FHE_RF,
-        "kwargs": {"n_estimators": 10, "max_depth": 4},
-        "fhe_kwargs": {"n_estimators": 10, "max_depth": 4, "n_bits": 5},
+        "kwargs": {"n_estimators": 15, "max_depth": 4},
+        "fhe_kwargs": {"n_estimators": 15, "max_depth": 4, "n_bits": 5},
     },
     "XGBoost (XGB)": {
         "key": "xgb",
         "plain_cls": XGBClassifier,
         "fhe_cls": FHE_XGB,
         "kwargs": {
-            "n_estimators": 10, "max_depth": 4,
+            "n_estimators": 15, "max_depth": 4,
             "eval_metric": "logloss", "verbosity": 0,
         },
-        "fhe_kwargs": {"n_estimators": 10, "max_depth": 4, "n_bits": 5},
+        "fhe_kwargs": {"n_estimators": 15, "max_depth": 4, "n_bits": 5},
     },
 }
 
