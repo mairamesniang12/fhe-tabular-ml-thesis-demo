@@ -1,66 +1,69 @@
 """
-Minimal FHE client.
+FHE inference server -- serves all 3 real deployed models (DT/RF/XGB),
+routed by a "model_key" field in the request body.
+
+Listens on 127.0.0.1 only -- never reachable from outside this Space's
+container, only from streamlit_app.py (the client) running in the same
+container over localhost.
+
+This process only ever receives ciphertexts and the public evaluation
+key for whichever model is requested. It never has the private key or
+plaintext features for any model.
 """
 import base64
+import json
+import os
 import time
 
-import numpy as np
-import requests
+from flask import Flask, jsonify, request
 
-from concrete.ml.deployment import FHEModelClient
+from concrete.ml.deployment import FHEModelServer
+from prepare_model import METRICS_FILE
 
-DEPLOY_DIR = "/kaggle/working/fhe_deployment_wdbc_dt"  # must match the server
-SERVER_URL = "http://localhost:5000/predict"
+SERVER_PORT = int(os.environ.get("FHE_SERVER_PORT", "5000"))
 
-client = FHEModelClient(path_dir=DEPLOY_DIR, key_dir=DEPLOY_DIR + "/keys")
-client.generate_private_and_evaluation_keys()
-serialized_eval_keys = client.get_serialized_evaluation_keys()
+app = Flask(__name__)
+
+with open(METRICS_FILE) as f:
+    _metrics = json.load(f)
+
+servers = {}
+for display_name, m in _metrics.items():
+    srv = FHEModelServer(path_dir=m["deploy_dir"])
+    srv.load()
+    servers[m["model_key"]] = srv
+
+print(
+    f"[fhe_server] Ready -- {len(servers)} model(s) loaded "
+    f"({list(servers.keys())}) -- listening on internal port {SERVER_PORT}"
+)
 
 
-def predict_one(x_sample: np.ndarray) -> dict:
+@app.route("/predict", methods=["POST"])
+def predict():
+    payload = request.get_json()
+    model_key = payload["model_key"]
+    encrypted_input = base64.b64decode(payload["encrypted_input"])
+    serialized_eval_keys = base64.b64decode(payload["evaluation_keys"])
+
+    server = servers[model_key]
+
     t0 = time.time()
-    encrypted_input = client.quantize_encrypt_serialize(x_sample)
-    encryption_time = time.time() - t0
+    encrypted_result = server.run(encrypted_input, serialized_eval_keys)
+    inference_time = time.time() - t0
 
-    payload = {
-        "encrypted_input": base64.b64encode(encrypted_input).decode("utf-8"),
-        "evaluation_keys": base64.b64encode(serialized_eval_keys).decode("utf-8"),
-    }
+    return jsonify(
+        {
+            "encrypted_result": base64.b64encode(encrypted_result).decode("utf-8"),
+            "server_inference_time_s": inference_time,
+        }
+    )
 
-    t0 = time.time()
-    response = requests.post(SERVER_URL, json=payload)
-    transfer_time = time.time() - t0
-    response_json = response.json()
 
-    encrypted_result = base64.b64decode(response_json["encrypted_result"])
-
-    t0 = time.time()
-    result = client.deserialize_decrypt_dequantize(encrypted_result)
-    decryption_time = time.time() - t0
-
-    return {
-        "prediction": result,
-        "client_encryption_time_s": encryption_time,
-        "request_size_bytes": len(encrypted_input),
-        "response_size_bytes": len(encrypted_result),
-        "network_roundtrip_s": transfer_time,
-        "server_inference_time_s": response_json["server_inference_time_s"],
-        "client_decryption_time_s": decryption_time,
-        "total_end_to_end_s": (
-            encryption_time + transfer_time + decryption_time
-        ),
-    }
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "models_loaded": list(servers.keys())})
 
 
 if __name__ == "__main__":
-    from sklearn.datasets import load_breast_cancer
-    from sklearn.model_selection import train_test_split
-
-    wdbc = load_breast_cancer()
-    _, X_test, _, _ = train_test_split(
-        wdbc.data, wdbc.target, test_size=0.2, random_state=42, stratify=wdbc.target)
-
-    metrics = predict_one(X_test[:1])
-    print("End-to-end client-server FHE inference:")
-    for k, v in metrics.items():
-        print(f"  {k}: {v}")
+    app.run(host="127.0.0.1", port=SERVER_PORT)
