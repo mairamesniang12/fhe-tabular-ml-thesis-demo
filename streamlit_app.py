@@ -43,10 +43,33 @@ def setup():
     """Runs exactly once per Streamlit session (cached across reruns)."""
     real_metrics = prepare_all_models()
 
+    server_log_file = open("/tmp/fhe_server.log", "w")
     server_process = subprocess.Popen(
-        [sys.executable, os.path.join(os.path.dirname(__file__), "fhe_server.py")]
+        [sys.executable, os.path.join(os.path.dirname(__file__), "fhe_server.py")],
+        stdout=server_log_file,
+        stderr=subprocess.STDOUT,
     )
-    time.sleep(5)
+    
+    server_ready = False
+    for _ in range(60):
+        if server_process.poll() is not None:
+            break
+        try:
+            r = requests.get(f"http://127.0.0.1:{SERVER_PORT}/health", timeout=1)
+            if r.status_code == 200:
+                server_ready = True
+                break
+        except requests.exceptions.ConnectionError:
+            pass
+        time.sleep(1)
+    
+    if not server_ready:
+        server_log_file.flush()
+        with open("/tmp/fhe_server.log") as f:
+            log_content = f.read()
+        st.error("Le serveur FHE n'a pas démarré. Logs :")
+        st.code(log_content or "(aucune sortie -- processus probablement tué, manque de RAM)")
+        st.stop()
 
     wdbc = load_breast_cancer()
     _, X_test, _, y_test = train_test_split(
