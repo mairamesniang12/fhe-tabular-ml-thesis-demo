@@ -1,3 +1,4 @@
+```python
 """
 Dashboard tab for the Streamlit app.
 
@@ -102,20 +103,20 @@ H1_DATA = pd.DataFrame([
 
 def render_dashboard():
     st.markdown(
-        "Tous les chiffres ci-dessous viennent directement des résultats réels "
-        "du Chapitre 5 (`master_results_latest.csv` et les CSV de sensibilité) "
-        "-- ce dashboard ne fait que les visualiser, il ne relance aucune mesure."
+        "All the figures below come directly from the real results "
+        "of Chapter 5 (`master_results_latest.csv` and the sensitivity CSV files) "
+        "-- this dashboard only visualizes them; it does not run any new measurements."
     )
 
     tab_a, tab_b, tab_c = st.tabs([
-        "📊 Partie A — Benchmarking",
-        "📈 Partie B — Sensibilité",
-        "🔗 Partie C — Déploiement & Hybride",
+        "📊 Part A — Benchmarking",
+        "📈 Part B — Sensitivity",
+        "🔗 Part C — Deployment & Hybrid",
     ])
 
     # ---------------- PART A ----------------
     with tab_a:
-        st.subheader("Accuracy : plaintext vs FHE-simulate")
+        st.subheader("Accuracy: plaintext vs FHE-simulate")
         fig = px.bar(
             PART_A.melt(
                 id_vars=["dataset", "model"],
@@ -130,124 +131,137 @@ def render_dashboard():
         fig.update_layout(legend_title_text="")
         st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("Latence FHE réelle (n=30, mean ± std sur 3 runs)")
+        st.subheader("Real FHE latency (n=30, mean ± std over 3 runs)")
         fig2 = px.bar(
             PART_A, x="dataset", y="latency", color="model", barmode="group",
-            labels={"latency": "Latence (s/échantillon)", "dataset": "Dataset"},
+            labels={"latency": "Latency (s/sample)", "dataset": "Dataset"},
         )
         st.plotly_chart(fig2, use_container_width=True)
 
         st.caption(
-            "Config : $D=4$, $T=15$, $p=5$ bits. Latence mesurée sur un "
-            "sous-échantillon stratifié de 30 observations (seed=42)."
+            "Configuration: $D=4$, $T=15$, $p=5$ bits. Latency measured on a "
+            "stratified subsample of 30 observations (seed=42)."
         )
 
     # ---------------- PART B ----------------
     with tab_b:
         colors = {"WDBC": "#1f77b4", "Pima": "#ff7f0e"}
 
-        st.subheader("Effet de la profondeur de l'arbre")
+        st.subheader("Effect of tree depth")
         c1, c2 = st.columns(2)
         with c1:
             fig_d1 = px.line(
                 DEPTH_DATA, x="depth", y="latency", color="dataset",
                 markers=True, color_discrete_map=colors,
-                labels={"latency": "Latence FHE (s)", "depth": "Profondeur D"},
+                labels={"latency": "FHE latency (s)", "depth": "Depth D"},
             )
             st.plotly_chart(fig_d1, use_container_width=True)
         with c2:
             fig_d2 = px.line(
                 DEPTH_DATA, x="depth", y="acc_fhe_sim", color="dataset",
                 markers=True, color_discrete_map=colors,
-                labels={"acc_fhe_sim": "Accuracy (FHE-sim)", "depth": "Profondeur D"},
+                labels={"acc_fhe_sim": "Accuracy (FHE-sim)", "depth": "Depth D"},
             )
             st.plotly_chart(fig_d2, use_container_width=True)
         st.caption(
-            "WDBC : accuracy maximale à D=5. Pima : accuracy maximale à D=3 -- "
-            "une config optimale pour un dataset ne l'est pas forcément pour l'autre."
+            "WDBC: maximum accuracy at D=5. Pima: maximum accuracy at D=3 -- "
+            "an optimal configuration for one dataset is not necessarily optimal for another."
         )
 
-        st.subheader("Effet du nombre d'arbres (Random Forest)")
+        st.subheader("Effect of the number of trees (Random Forest)")
         c3, c4 = st.columns(2)
         with c3:
             fig_n1 = px.line(
                 NTREES_DATA, x="n_trees", y="latency", color="dataset",
                 markers=True, color_discrete_map=colors,
-                labels={"latency": "Latence FHE (s)", "n_trees": "Nombre d'arbres T"},
+                labels={"latency": "FHE latency (s)", "n_trees": "Number of trees T"},
             )
             st.plotly_chart(fig_n1, use_container_width=True)
         with c4:
             fig_n2 = px.line(
                 NTREES_DATA, x="n_trees", y="acc_fhe_sim", color="dataset",
                 markers=True, color_discrete_map=colors,
-                labels={"acc_fhe_sim": "Accuracy (FHE-sim)", "n_trees": "Nombre d'arbres T"},
+                labels={"acc_fhe_sim": "Accuracy (FHE-sim)", "n_trees": "Number of trees T"},
             )
             st.plotly_chart(fig_n2, use_container_width=True)
         st.caption(
-            "WDBC : accuracy constante quel que soit T. Pima : accuracy "
-            "augmente avec T (+3.25 points entre T=10 et T=100)."
+            "WDBC: accuracy remains constant regardless of T. Pima: accuracy "
+            "increases with T (+3.25 percentage points between T=10 and T=100)."
         )
 
-        st.subheader("Effet de la largeur de quantification (bits)")
+        st.subheader("Effect of quantization width (bits)")
         c5, c6 = st.columns(2)
         with c5:
             fig_b1 = px.line(
                 BITS_DATA, x="bits", y="latency", color="dataset",
                 markers=True, color_discrete_map=colors,
-                labels={"latency": "Latence FHE (s)", "bits": "Bits de quantification p"},
+                labels={"latency": "FHE latency (s)", "bits": "Quantization bits p"},
             )
             st.plotly_chart(fig_b1, use_container_width=True)
         with c6:
             fig_b2 = px.line(
                 BITS_DATA, x="bits", y="acc_fhe_sim", color="dataset",
                 markers=True, color_discrete_map=colors,
-                labels={"acc_fhe_sim": "Accuracy (FHE-sim)", "bits": "Bits de quantification p"},
+                labels={"acc_fhe_sim": "Accuracy (FHE-sim)", "bits": "Quantization bits p"},
             )
             st.plotly_chart(fig_b2, use_container_width=True)
         st.caption(
-            "Pima : p=6 bits est la PIRE config testée (0.7078), p=8 la "
-            "meilleure (0.7987) -- pas de relation monotone sur ce dataset."
+            "Pima: p=6 bits is the WORST configuration tested (0.7078), while p=8 is "
+            "the best (0.7987) -- there is no monotonic relationship on this dataset."
         )
 
     # ---------------- PART C ----------------
     with tab_c:
-        st.subheader("Déploiement client-serveur : répartition de la latence")
+        st.subheader("Client-server deployment: latency breakdown")
         fig_dep = go.Figure(go.Pie(
             labels=list(DEPLOYMENT.keys()),
             values=list(DEPLOYMENT.values()),
             hole=0.4,
         ))
         fig_dep.update_layout(
-            annotations=[dict(text=f"{sum(DEPLOYMENT.values()):.2f}s<br>total", x=0.5, y=0.5, showarrow=False)]
+            annotations=[dict(
+                text=f"{sum(DEPLOYMENT.values()):.2f}s<br>total",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+            )]
         )
         st.plotly_chart(fig_dep, use_container_width=True)
         st.caption(
-            "Mesuré entre deux VRAIS processus séparés (fhe_client.py / "
-            "fhe_server.py) communiquant par HTTP réel. Basé sur une seule "
-            "requête -- à répéter 5-10x pour un intervalle de confiance."
+            "Measured between two REAL separate processes (fhe_client.py / "
+            "fhe_server.py) communicating over real HTTP. Based on a single "
+            "request -- should be repeated 5-10 times for a confidence interval."
         )
 
-        st.subheader("FHE + Differential Privacy : compromis vie privée / utilité")
+        st.subheader("FHE + Differential Privacy: privacy-utility trade-off")
         fig_dp = px.bar(
             DP_DATA, x="epsilon", y="acc_mean", color="model",
             error_y="acc_std", barmode="group", facet_col="dataset",
-            labels={"acc_mean": "Accuracy (FHE+DP)", "epsilon": "ε (budget de confidentialité)"},
+            labels={
+                "acc_mean": "Accuracy (FHE+DP)",
+                "epsilon": "ε (privacy budget)",
+            },
         )
         fig_dp.update_xaxes(type="category")
         st.plotly_chart(fig_dp, use_container_width=True)
         st.caption(
-            "Simulation Monte Carlo illustrative (20 répétitions, δ=1e-5, "
-            "Δf=1 -- hypothèse simplificatrice, PAS une garantie DP formelle)."
+            "Illustrative Monte Carlo simulation (20 repetitions, δ=1e-5, "
+            "Δf=1 -- simplifying assumption, NOT a formal DP guarantee)."
         )
 
-        st.subheader("H1 : arbres vs réseau de neurones sous FHE réelle")
+        st.subheader("H1: trees vs neural network under real FHE")
         fig_h1 = px.bar(
-            H1_DATA, x="dataset", y="latency", color="model", barmode="group",
-            labels={"latency": "Latence FHE (s/échantillon)"},
+            H1_DATA,
+            x="dataset",
+            y="latency",
+            color="model",
+            barmode="group",
+            labels={"latency": "FHE latency (s/sample)"},
         )
         st.plotly_chart(fig_h1, use_container_width=True)
         st.caption(
-            "Sur WDBC, le MLP est plus lent que les 3 modèles à arbres. Sur "
-            "Pima, le MLP est plus lent que DT mais PLUS RAPIDE que RF et "
-            "XGB -- H1 n'est que partiellement vérifiée."
+            "On WDBC, the MLP is slower than the three tree-based models. On "
+            "Pima, the MLP is slower than DT but FASTER than RF and XGB -- "
+            "H1 is only partially supported."
         )
+```
