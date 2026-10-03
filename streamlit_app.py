@@ -38,7 +38,7 @@ SERVER_URL = f"http://127.0.0.1:{SERVER_PORT}/predict"
 CLASS_NAMES = ["malignant", "benign"]
 
 
-@st.cache_resource(show_spinner="Entraînement + compilation des 3 modèles FHE (une seule fois)...")
+@st.cache_resource(show_spinner="Training + compilation of the 3 FHE models (once only)...")
 def setup():
     """Runs exactly once per Streamlit session (cached across reruns)."""
     real_metrics = prepare_all_models()
@@ -67,8 +67,8 @@ def setup():
         server_log_file.flush()
         with open("/tmp/fhe_server.log") as f:
             log_content = f.read()
-        st.error("Le serveur FHE n'a pas démarré. Logs :")
-        st.code(log_content or "(aucune sortie -- processus probablement tué, manque de RAM)")
+        st.error("The FHE server did not start. Logs:")
+        st.code(log_content or "(no output -- process was probably killed due to insufficient RAM)")
         st.stop()
 
     wdbc = load_breast_cancer()
@@ -207,15 +207,15 @@ def run_inference(model_display_name, features, true_label):
 
 
 # ============================== UI ==============================
-st.set_page_config(page_title="Démonstrateur FHE Client-Serveur", layout="wide")
+st.set_page_config(page_title="Client-Server FHE Demonstrator", layout="wide")
 
-st.title("🔒 Démonstrateur FHE Client-Serveur — WDBC (Breast Cancer)")
+st.title("🔒 Client-Server FHE Demonstrator — WDBC (Breast Cancer)")
 st.markdown(
-    "Chaque nombre affiché est soit mesuré en direct lors de ce clic, soit calculé "
-    "une fois au démarrage à partir d'entraînements/compilations Concrete-ML réels "
-    "-- rien n'est codé en dur.\n\n"
-    f"Le serveur (`fhe_server.py`, processus séparé, port interne {SERVER_PORT}, "
-    "jamais exposé publiquement) ne reçoit et ne renvoie **que des ciphertexts**."
+    "Every displayed value is either measured live during this click or calculated "
+    "once at startup from real Concrete-ML training/compilation runs "
+    "-- nothing is hard-coded.\n\n"
+    f"The server (`fhe_server.py`, separate process, internal port {SERVER_PORT}, "
+    "never publicly exposed) only receives and returns **ciphertexts**."
 )
 
 if "sample_features" not in st.session_state:
@@ -226,9 +226,9 @@ col1, col2 = st.columns([1, 2])
 
 with col1:
     st.subheader("⚙️ Configuration")
-    model_choice = st.selectbox("Modèle FHE", MODEL_DISPLAY_NAMES)
+    model_choice = st.selectbox("FHE Model", MODEL_DISPLAY_NAMES)
 
-    if st.button("🔄 Charger un échantillon de test réel"):
+    if st.button("🔄 Load a real test sample"):
         idx = int(np.random.randint(0, len(X_TEST)))
         st.session_state.sample_features = X_TEST[idx].tolist()
         st.session_state.true_label = int(Y_TEST[idx])
@@ -241,66 +241,66 @@ with col1:
             }
         )
         st.caption(
-            f"Label réel (connu seulement du client) : "
+            f"True label (known only to the client): "
             f"{CLASS_NAMES[st.session_state.true_label]}"
         )
 
     run_disabled = st.session_state.sample_features is None
-    run_clicked = st.button("🔐 Chiffrer et prédire", disabled=run_disabled, type="primary")
+    run_clicked = st.button("🔐 Encrypt and predict", disabled=run_disabled, type="primary")
 
 with col2:
     if run_clicked:
-        with st.spinner("Chiffrement → réseau → inférence FHE → déchiffrement..."):
+        with st.spinner("Encryption → network → FHE inference → decryption..."):
             result = run_inference(
                 model_choice,
                 st.session_state.sample_features,
                 st.session_state.true_label,
             )
 
-        st.subheader("💻 CLIENT LOG (mesures réelles)")
+        st.subheader("💻 CLIENT LOG (real measurements)")
         st.code(result["client_log"], language=None)
 
-        st.subheader("☁️ SERVER LOG (mesures réelles)")
+        st.subheader("☁️ SERVER LOG (real measurements)")
         st.code(result["server_log"], language=None)
 
-        st.subheader("📊 Résultats")
+        st.subheader("📊 Results")
         pred_label = CLASS_NAMES[result["prediction"]]
         true_label = CLASS_NAMES[result["true_label"]]
         correct = result["prediction"] == result["true_label"]
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Prédiction (déchiffrée)", pred_label)
-        c2.metric("Label réel", true_label, "✅ correct" if correct else "❌ incorrect")
+        c1.metric("Prediction (decrypted)", pred_label)
+        c2.metric("True label", true_label, "✅ correct" if correct else "❌ incorrect")
         c3.metric("Latence bout-en-bout", f"{result['total_e2e']:.3f} s")
 
         st.caption(
-            f"Requête chiffrée : {result['req_size']:,} bytes  |  "
-            f"Réponse chiffrée : {result['resp_size']:,} bytes"
+            f"Encrypted request: {result['req_size']:,} bytes  |  "
+            f"Encrypted response: {result['resp_size']:,} bytes"
         )
 
         st.markdown("---")
-        st.subheader("Métriques globales par modèle")
+        st.subheader("Global metrics by model")
         st.caption(
-            f"Calculées au démarrage : accuracy en clair et FHE-simulate sur "
-            f"l'ensemble de test local complet ; latence FHE réelle mesurée sur "
-            f"seulement {N_REAL_FHE_SAMPLES_AT_DEPLOY} échantillons × "
-            f"{N_LATENCY_REPEATS_AT_DEPLOY} répétitions -- un budget de démarrage "
-            f"volontairement réduit, PAS le protocole complet de la thèse (≥30 "
-            f"échantillons). Ces chiffres illustrent la démo, ils ne remplacent "
-            f"pas les résultats du Chapitre 5."
+            f"Calculated at startup: plaintext accuracy and FHE-simulate accuracy on "
+            f"the complete local test set; real FHE latency measured on "
+            f"only {N_REAL_FHE_SAMPLES_AT_DEPLOY} samples × "
+            f"{N_LATENCY_REPEATS_AT_DEPLOY} repetitions -- a deliberately reduced "
+            f"startup budget, NOT the full thesis protocol (≥30 "
+            f"samples). These figures illustrate the demo; they do not replace "
+            f"the results of Chapter 5."
         )
         rows = []
         for name, mm in REAL_METRICS.items():
             rows.append(
                 {
-                    "Modèle": ("→ " if name == model_choice else "") + name,
-                    "Acc. plain": f"{mm['acc_plain']*100:.1f}%",
+                    "Model": ("→ " if name == model_choice else "") + name,
+                    "Plain accuracy": f"{mm['acc_plain']*100:.1f}%",
                     "Acc. FHE-simulate": f"{mm['acc_fhe_simulate_full']*100:.1f}%",
-                    "Latence FHE (petit échantillon)": (
+                    "FHE latency (small sample)": (
                         f"{mm['latency_fhe_mean_s']:.3f}s ± {mm['latency_fhe_std_s']:.3f}s"
                     ),
                 }
             )
         st.table(rows)
     else:
-        st.info("Charge un échantillon, puis clique sur \"Chiffrer et prédire\".")
+        st.info("Load a sample, then click \"Encrypt and predict\".")
