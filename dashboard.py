@@ -86,7 +86,7 @@ DP_DATA = DP_DATA.rename(
     }
 )
 
-_q = _csv("deploy_queries.csv")
+_q = _csv("deployment_queries_cached.csv")
 DEPLOYMENT = {
     "Client encryption": _q.encryption_s.mean(),
     "HTTP/request-processing overhead": _q.overhead_non_fhe_s.mean(),
