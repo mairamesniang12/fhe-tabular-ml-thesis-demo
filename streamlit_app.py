@@ -36,8 +36,6 @@ from prepare_model import (
 )
 from concrete.ml.deployment import FHEModelClient
 
-from dashboard import render_dashboard
-
 
 SERVER_PORT = int(os.environ.get("FHE_SERVER_PORT", "5000"))
 SERVER_URL = f"http://127.0.0.1:{SERVER_PORT}/predict"
