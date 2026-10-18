@@ -27,6 +27,7 @@ import requests
 import streamlit as st
 from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import train_test_split
+from dashboard import render_dashboard
 
 from prepare_model import (
     N_LATENCY_REPEATS_AT_DEPLOY,
