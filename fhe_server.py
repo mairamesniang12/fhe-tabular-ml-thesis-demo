@@ -1,69 +1,66 @@
-"""
-FHE inference server -- serves all 3 real deployed models (DT/RF/XGB),
-routed by a "model_key" field in the request body.
-
-Listens on 127.0.0.1 only -- never reachable from outside this Space's
-container, only from streamlit_app.py (the client) running in the same
-container over localhost.
-
-This process only ever receives ciphertexts and the public evaluation
-key for whichever model is requested. It never has the private key or
-plaintext features for any model.
-"""
-import base64
-import json
-import os
-import time
-
+import base64, os, time
 from flask import Flask, jsonify, request
-
 from concrete.ml.deployment import FHEModelServer
-from prepare_model import METRICS_FILE
 
-SERVER_PORT = int(os.environ.get("FHE_SERVER_PORT", "5000"))
+DEPLOY_DIR = os.environ.get(
+    "DEPLOY_DIR",
+    "/kaggle/working/fhe_deployment_wdbc_dt_v2"
+)
+PORT = int(os.environ.get("FHE_SERVER_PORT", "5000"))
+
+def proc_status_mb(field):
+    with open("/proc/self/status") as f:
+        for line in f:
+            if line.startswith(field):
+                return int(line.split()[1]) / 1024  # kB -> MB
+    return None
 
 app = Flask(__name__)
+server = FHEModelServer(path_dir=DEPLOY_DIR)
+server.load()
+KEY_CACHE = {}
 
-with open(METRICS_FILE) as f:
-    _metrics = json.load(f)
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "rss_mb": proc_status_mb("VmRSS"),
+        "peak_rss_mb": proc_status_mb("VmHWM")
+    })
 
-servers = {}
-for display_name, m in _metrics.items():
-    srv = FHEModelServer(path_dir=m["deploy_dir"])
-    srv.load()
-    servers[m["model_key"]] = srv
-
-print(
-    f"[fhe_server] Ready -- {len(servers)} model(s) loaded "
-    f"({list(servers.keys())}) -- listening on internal port {SERVER_PORT}"
-)
-
+@app.route("/register_keys", methods=["POST"])
+def register_keys():
+    t0 = time.time()
+    p = request.get_json()
+    KEY_CACHE[p["client_id"]] = base64.b64decode(p["evaluation_keys"])
+    return jsonify({
+        "stored_bytes": len(KEY_CACHE[p["client_id"]]),
+        "handler_time_s": time.time() - t0
+    })
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    payload = request.get_json()
-    model_key = payload["model_key"]
-    encrypted_input = base64.b64decode(payload["encrypted_input"])
-    serialized_eval_keys = base64.b64decode(payload["evaluation_keys"])
+    t_handler = time.time()
+    p = request.get_json()
+    enc_in = base64.b64decode(p["encrypted_input"])
 
-    server = servers[model_key]
-
-    t0 = time.time()
-    encrypted_result = server.run(encrypted_input, serialized_eval_keys)
-    inference_time = time.time() - t0
-
-    return jsonify(
-        {
-            "encrypted_result": base64.b64encode(encrypted_result).decode("utf-8"),
-            "server_inference_time_s": inference_time,
-        }
+    # "Legacy" mode: keys are included in each request;
+    # normal mode: keys are retrieved from the cache.
+    keys = (
+        base64.b64decode(p["evaluation_keys"])
+        if "evaluation_keys" in p
+        else KEY_CACHE[p["client_id"]]
     )
 
+    t0 = time.time()
+    enc_out = server.run(enc_in, keys)
+    inference_s = time.time() - t0
 
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok", "models_loaded": list(servers.keys())})
-
+    return jsonify({
+        "encrypted_result": base64.b64encode(enc_out).decode(),
+        "server_inference_time_s": inference_s,
+        "server_handler_time_s": time.time() - t_handler
+    })
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=SERVER_PORT)
+    app.run(host="127.0.0.1", port=PORT)
