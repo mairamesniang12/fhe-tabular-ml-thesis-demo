@@ -68,7 +68,12 @@ BITS_DATA = _sw[_sw.sweep == "bits"].rename(
     }
 )
 
-NTREES_DATA = _csv("sweep_ntrees.csv").rename(
+# The Pima T=100 run was saved in a separate file (see Chapter 5).
+_nt = [_csv("sweep_ntrees.csv")]
+if os.path.isfile(os.path.join(DATA, "sweep_ntrees_pima_T100.csv")):
+    _nt.append(_csv("sweep_ntrees_pima_T100.csv"))
+
+NTREES_DATA = pd.concat(_nt, ignore_index=True).rename(
     columns={
         "value": "n_trees",
         "acc_fhe_simulate_full": "acc_fhe_sim",
@@ -93,3 +98,146 @@ DEPLOYMENT = {
     "Server-side call (FHEModelServer.run)": _q.server_inference_s.mean(),
     "Client decryption": _q.decryption_s.mean(),
 }
+
+
+# ============================== helpers ==============================
+
+def _with_ci_errors(df):
+    """Add asymmetric error-bar columns from the stored 95% CI."""
+    df = df.copy()
+    df["err_plus"] = (df["latency_ci95_high_s"] - df["latency"]).clip(lower=0)
+    df["err_minus"] = (df["latency"] - df["latency_ci95_low_s"]).clip(lower=0)
+    return df
+
+
+def _sweep_charts(df, x, x_label):
+    d = _with_ci_errors(df).sort_values(["dataset", x])
+    fig_lat = px.line(
+        d, x=x, y="latency", color="dataset", markers=True,
+        error_y="err_plus", error_y_minus="err_minus",
+        labels={x: x_label, "latency": "FHE latency (s/sample)"},
+    )
+    fig_acc = px.line(
+        d, x=x, y="acc_fhe_sim", color="dataset", markers=True,
+        labels={x: x_label, "acc_fhe_sim": "FHE-simulate accuracy"},
+    )
+    c1, c2 = st.columns(2)
+    c1.plotly_chart(fig_lat, use_container_width=True)
+    c2.plotly_chart(fig_acc, use_container_width=True)
+
+
+# ============================== UI ==============================
+
+def render_dashboard():
+    st.caption(
+        "All values are read from the result files of Chapter 5 "
+        "(CSV files in data/). No new experiment is run here."
+    )
+
+    tab_a, tab_b, tab_c = st.tabs(
+        ["Part A: Benchmark", "Part B: Sensitivity", "Part C: Deployment & DP"]
+    )
+
+    # ---------------- Part A ----------------
+    with tab_a:
+        st.subheader("Decision Tree, Random Forest and XGBoost under FHE")
+        st.caption(
+            "Accuracy on the full test sets (plaintext and FHE-simulate); "
+            "latency: real-FHE time per sample, mean ± standard deviation "
+            "over repeated runs."
+        )
+
+        a = PART_A.copy()
+        st.dataframe(
+            a.rename(
+                columns={
+                    "acc_plain": "Acc. plain",
+                    "acc_fhe_sim": "Acc. FHE-sim",
+                    "latency": "Latency (s)",
+                    "latency_fhe_std_s": "Latency std (s)",
+                }
+            ).round(4),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        fig_lat = px.bar(
+            a, x="dataset", y="latency", color="model", barmode="group",
+            error_y="latency_fhe_std_s",
+            labels={"latency": "FHE latency (s/sample)", "dataset": "Dataset"},
+        )
+        st.plotly_chart(fig_lat, use_container_width=True)
+
+        acc_long = a.melt(
+            id_vars=["dataset", "model"],
+            value_vars=["acc_plain", "acc_fhe_sim"],
+            var_name="mode", value_name="accuracy",
+        )
+        acc_long["mode"] = acc_long["mode"].map(
+            {"acc_plain": "Plaintext", "acc_fhe_sim": "FHE-simulate"}
+        )
+        acc_long["config"] = acc_long["dataset"] + " / " + acc_long["model"]
+        fig_acc = px.bar(
+            acc_long, x="config", y="accuracy", color="mode", barmode="group",
+            labels={"config": "Dataset / model", "accuracy": "Accuracy"},
+        )
+        st.plotly_chart(fig_acc, use_container_width=True)
+
+    # ---------------- Part B ----------------
+    with tab_b:
+        st.subheader("Hyperparameter analysis (WDBC and Pima)")
+        st.caption(
+            "Latency: mean with 95% confidence interval (run-to-run timing "
+            "noise only). Accuracy: FHE-simulate on the full test set."
+        )
+
+        st.markdown("**Tree depth D** (Decision Tree, p = 5)")
+        _sweep_charts(DEPTH_DATA, "depth", "Tree depth D")
+
+        st.markdown("**Number of trees T** (Random Forest, D = 4, p = 5)")
+        _sweep_charts(NTREES_DATA, "n_trees", "Number of trees T")
+
+        st.markdown("**Quantization bit-width p** (Decision Tree, D = 4)")
+        _sweep_charts(BITS_DATA, "bits", "Bit-width p")
+
+    # ---------------- Part C ----------------
+    with tab_c:
+        st.subheader("Client-server deployment (WDBC, Decision Tree)")
+        st.caption(
+            "Mean over the warm per-query measurements (key cached on the "
+            "server). The server-side call is not a pure FHE computation "
+            "time: see Chapter 5 for the comparison with in-process execution."
+        )
+
+        dep = pd.DataFrame(
+            {"Operation": list(DEPLOYMENT.keys()),
+             "Mean time (s)": list(DEPLOYMENT.values())}
+        )
+        fig_dep = px.bar(
+            dep, x="Mean time (s)", y="Operation", orientation="h",
+            text=dep["Mean time (s)"].round(4),
+        )
+        st.plotly_chart(fig_dep, use_container_width=True)
+        st.metric(
+            "Total end-to-end (sum of the four components)",
+            f"{sum(DEPLOYMENT.values()):.3f} s",
+        )
+
+        st.subheader("FHE + differential privacy (illustrative simulation)")
+        st.caption(
+            "Output perturbation simulation with an ASSUMED sensitivity "
+            "(Δf = 1); not a proven (ε, δ)-DP guarantee."
+        )
+        dp = DP_DATA.copy()
+        dp["config"] = dp["dataset"] + " / " + dp["model"]
+        fig_dp = px.line(
+            dp, x="epsilon", y="acc_mean", color="config", markers=True,
+            error_y="acc_std", log_x=True,
+            labels={"epsilon": "ε", "acc_mean": "Accuracy under noise"},
+        )
+        st.plotly_chart(fig_dp, use_container_width=True)
+        st.dataframe(
+            dp.drop(columns=["config"]).round(4),
+            use_container_width=True,
+            hide_index=True,
+        )
