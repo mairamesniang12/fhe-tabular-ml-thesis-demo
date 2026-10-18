@@ -1,4 +1,3 @@
-```python
 import base64, json, os, shutil, subprocess, sys, time
 import numpy as np, pandas as pd, requests
 from scipy import stats
@@ -178,4 +177,3 @@ print(
     f"(n={N_LEGACY}) ==="
 )
 print(summarize(legacy))
-```
