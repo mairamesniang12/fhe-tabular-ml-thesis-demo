@@ -1,3 +1,4 @@
+
 """
 Streamlit entry point.
 
@@ -13,6 +14,7 @@ Everything displayed is either measured live during THIS exact click,
 or read from real_metrics.json (written once by prepare_model.py from
 real training/compilation/evaluation runs). Nothing is hand-typed.
 """
+
 import base64
 import os
 import subprocess
@@ -35,31 +37,45 @@ from concrete.ml.deployment import FHEModelClient
 
 from dashboard import render_dashboard
 
+
 SERVER_PORT = int(os.environ.get("FHE_SERVER_PORT", "5000"))
 SERVER_URL = f"http://127.0.0.1:{SERVER_PORT}/predict"
 CLASS_NAMES = ["malignant", "benign"]
 
 
-@st.cache_resource(show_spinner="Training + compiling the 3 FHE models (one-time setup)...")
+@st.cache_resource(
+    show_spinner="Training + compiling the 3 FHE models (one-time setup)..."
+)
 def setup():
     """Runs exactly once per Streamlit session (cached across reruns)."""
     real_metrics = prepare_all_models()
 
     server_process = subprocess.Popen(
-        [sys.executable, os.path.join(os.path.dirname(__file__), "fhe_server.py")]
+        [
+            sys.executable,
+            os.path.join(os.path.dirname(__file__), "fhe_server.py"),
+        ]
     )
     time.sleep(5)
 
     wdbc = load_breast_cancer()
     _, X_test, _, y_test = train_test_split(
-        wdbc.data, wdbc.target, test_size=0.2, random_state=42, stratify=wdbc.target
+        wdbc.data,
+        wdbc.target,
+        test_size=0.2,
+        random_state=42,
+        stratify=wdbc.target,
     )
     feature_names = list(wdbc.feature_names)
 
     clients = {}
     eval_keys = {}
+
     for display_name, m in real_metrics.items():
-        c = FHEModelClient(path_dir=m["deploy_dir"], key_dir=m["deploy_dir"] + "/keys")
+        c = FHEModelClient(
+            path_dir=m["deploy_dir"],
+            key_dir=m["deploy_dir"] + "/keys",
+        )
         c.generate_private_and_evaluation_keys()
         clients[m["model_key"]] = c
         eval_keys[m["model_key"]] = c.get_serialized_evaluation_keys()
@@ -76,12 +92,14 @@ def setup():
 
 
 STATE = setup()
+
 REAL_METRICS = STATE["real_metrics"]
 X_TEST = STATE["X_test"]
 Y_TEST = STATE["y_test"]
 FEATURE_NAMES = STATE["feature_names"]
 CLIENTS = STATE["clients"]
 EVAL_KEYS = STATE["eval_keys"]
+
 MODEL_DISPLAY_NAMES = list(REAL_METRICS.keys())
 
 
@@ -94,6 +112,9 @@ def run_inference(model_display_name, features, true_label):
     x_sample = np.array(features, dtype=np.float64).reshape(1, -1)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # =========================================================
+    # CLIENT LOG
+    # =========================================================
     client_log = []
     client_log.append("=" * 50)
     client_log.append("CLIENT SIDE (this Streamlit app)")
@@ -102,77 +123,157 @@ def run_inference(model_display_name, features, true_label):
     client_log.append(f"Model   : {model_display_name}")
     client_log.append("Security: 128-bit (TFHE, Concrete-ML)")
     client_log.append("")
-    client_log.append("[Step 1] Quantizing + encrypting input (real Concrete-ML call)...")
+    client_log.append(
+        "[Step 1] Quantizing + encrypting input "
+        "(real Concrete-ML call)..."
+    )
 
     t0 = time.time()
     encrypted_input = client.quantize_encrypt_serialize(x_sample)
     encryption_time = time.time() - t0
     req_size = len(encrypted_input)
 
-    client_log.append("  ✓ Plaintext → Ciphertext (client.quantize_encrypt_serialize)")
-    client_log.append(f"  ✓ Encrypted request size : {req_size:,} bytes (measured)")
-    client_log.append(f"  ⏱ Encryption time        : {encryption_time:.4f}s (measured)")
+    client_log.append(
+        "  ✓ Plaintext → Ciphertext "
+        "(client.quantize_encrypt_serialize)"
+    )
+    client_log.append(
+        f"  ✓ Encrypted request size : {req_size:,} bytes (measured)"
+    )
+    client_log.append(
+        f"  ⏱ Encryption time        : {encryption_time:.4f}s (measured)"
+    )
     client_log.append("")
-    client_log.append("[Step 2] Sending encrypted request over real HTTP to fhe_server.py...")
-    client_log.append("  → Server process receives ONLY the ciphertext + evaluation key")
-    client_log.append("  → Server CANNOT see plaintext feature values")
+    client_log.append(
+        "[Step 2] Sending encrypted request over real HTTP to fhe_server.py..."
+    )
+    client_log.append(
+        "  → Server process receives ONLY the ciphertext + evaluation key"
+    )
+    client_log.append(
+        "  → The server process receives no plaintext features"
+    )
 
     payload = {
         "model_key": model_key,
         "encrypted_input": base64.b64encode(encrypted_input).decode("utf-8"),
-        "evaluation_keys": base64.b64encode(serialized_eval_keys).decode("utf-8"),
+        "evaluation_keys": base64.b64encode(
+            serialized_eval_keys
+        ).decode("utf-8"),
     }
 
+    # =========================================================
+    # HTTP REQUEST AND SERVER-SIDE TIMING
+    # =========================================================
     t0 = time.time()
     response = requests.post(SERVER_URL, json=payload, timeout=120)
     network_roundtrip_s = time.time() - t0
+
+    response.raise_for_status()
     response_json = response.json()
+
     server_inference_time = response_json["server_inference_time_s"]
 
-    encrypted_result = base64.b64decode(response_json["encrypted_result"])
+    encrypted_result = base64.b64decode(
+        response_json["encrypted_result"]
+    )
     resp_size = len(encrypted_result)
 
+    # =========================================================
+    # SERVER LOG
+    # =========================================================
     server_log = []
     server_log.append("=" * 50)
-    server_log.append("SERVER SIDE (fhe_server.py, separate OS process)")
+    server_log.append(
+        "SERVER SIDE (fhe_server.py, separate OS process)"
+    )
     server_log.append("=" * 50)
-    server_log.append(f"[Step 3] Encrypted request received (model={model_key})")
-    server_log.append(f"  ✓ Ciphertext size received : {req_size:,} bytes")
+    server_log.append(
+        f"[Step 3] Encrypted request received (model={model_key})"
+    )
+    server_log.append(
+        f"  ✓ Ciphertext size received : {req_size:,} bytes"
+    )
     server_log.append("")
-    server_log.append("[Step 4] Running real FHE inference (server.run)...")
-    server_log.append("  → Homomorphic evaluation of the compiled circuit")
-    server_log.append("  → Server sees ONLY encrypted data at every step")
-    server_log.append(f"  ⏱ Server FHE inference time : {server_inference_time:.4f}s (measured)")
+    server_log.append(
+        "[Step 4] Evaluating the compiled circuit (FHEModelServer.run)..."
+    )
+    server_log.append(
+        "  → Homomorphic evaluation of the compiled circuit"
+    )
+    server_log.append(
+        "  → Server sees ONLY encrypted data at every step"
+    )
+    server_log.append(
+        f"  ⏱ Server-side call time : "
+        f"{server_inference_time:.4f}s (measured)"
+    )
     server_log.append("")
     server_log.append("[Step 5] Returning encrypted result...")
-    server_log.append(f"  ✓ Encrypted response size : {resp_size:,} bytes (measured)")
-    server_log.append("  → Client will decrypt -- server never sees the plaintext result")
+    server_log.append(
+        f"  ✓ Encrypted response size : {resp_size:,} bytes (measured)"
+    )
+    server_log.append(
+        "  → Client will decrypt -- server never sees the plaintext result"
+    )
 
+    # =========================================================
+    # CLIENT DECRYPTION
+    # =========================================================
     t0 = time.time()
     result = client.deserialize_decrypt_dequantize(encrypted_result)
     decryption_time = time.time() - t0
+
     prediction = int(np.array(result).reshape(-1)[0])
 
     client_log.append("")
     client_log.append("[Step 6] Encrypted result received back over HTTP.")
-    client_log.append("[Step 7] Decrypting (private key, client only)...")
-    client_log.append(f"  ⏱ Decryption time : {decryption_time:.4f}s (measured)")
+    client_log.append(
+        "[Step 7] Decrypting (private key, client only)..."
+    )
+    client_log.append(
+        f"  ⏱ Decryption time : {decryption_time:.4f}s (measured)"
+    )
     client_log.append("")
 
-    total_e2e = encryption_time + network_roundtrip_s + decryption_time
+    # End-to-end latency includes encryption, HTTP round trip,
+    # server processing, and decryption. Server processing is already
+    # included in the HTTP round-trip measurement.
+    total_e2e = (
+        encryption_time
+        + network_roundtrip_s
+        + decryption_time
+    )
 
+    # =========================================================
+    # TIMING SUMMARY
+    # =========================================================
     client_log.append("=" * 50)
-    client_log.append("TIMING SUMMARY (this single query, real measurements)")
+    client_log.append(
+        "TIMING SUMMARY (this single query, real measurements)"
+    )
     client_log.append("=" * 50)
-    client_log.append(f"  Encryption        : {encryption_time:.4f}s")
-    client_log.append(f"  Network round trip: {network_roundtrip_s:.4f}s "
-                       f"(includes server inference)")
-    client_log.append(f"    of which server inference: {server_inference_time:.4f}s")
-    client_log.append(f"  Decryption         : {decryption_time:.4f}s")
-    client_log.append(f"  TOTAL end-to-end   : {total_e2e:.4f}s")
+    client_log.append(
+        f"  Encryption        : {encryption_time:.4f}s"
+    )
+    client_log.append(
+        f"  HTTP round trip (localhost): {network_roundtrip_s:.4f}s "
+        f"(includes server inference)"
+    )
+    client_log.append(
+        f"    of which server-side call: {server_inference_time:.4f}s"
+    )
+    client_log.append(
+        f"  Decryption         : {decryption_time:.4f}s"
+    )
+    client_log.append(
+        f"  TOTAL end-to-end   : {total_e2e:.4f}s"
+    )
     client_log.append("")
-    client_log.append("🔒 Privacy preserved throughout -- the server process")
-    client_log.append("   never had access to plaintext features or the private key.")
+    client_log.append(
+        "The server process never received plaintext features "
+        "or the private key."
+    )
 
     return {
         "client_log": "\n".join(client_log),
@@ -186,9 +287,16 @@ def run_inference(model_display_name, features, true_label):
 
 
 # ============================== UI ==============================
-st.set_page_config(page_title="FHE Client-Server Demonstrator", layout="wide")
 
-st.title("🔒 FHE Client-Server Demonstrator — WDBC (Breast Cancer)")
+st.set_page_config(
+    page_title="FHE Client-Server Demonstrator",
+    layout="wide",
+)
+
+st.title(
+    "🔒 FHE Client-Server Demonstrator — WDBC (Breast Cancer)"
+)
+
 st.markdown(
     "Every number shown is either measured live during this exact click, or "
     "computed once at startup from real Concrete-ML training/compilation runs "
@@ -198,7 +306,10 @@ st.markdown(
 )
 
 
-tab_demo, tab_dashboard = st.tabs(["🔐 Live Demo", "📊 Dashboard (real results)"])
+tab_demo, tab_dashboard = st.tabs(
+    ["🔐 Live Demo", "📊 Dashboard (real results)"]
+)
+
 
 with tab_demo:
     if "sample_features" not in st.session_state:
@@ -209,7 +320,11 @@ with tab_demo:
 
     with col1:
         st.subheader("⚙️ Configuration")
-        model_choice = st.selectbox("FHE Model", MODEL_DISPLAY_NAMES)
+
+        model_choice = st.selectbox(
+            "FHE Model",
+            MODEL_DISPLAY_NAMES,
+        )
 
         if st.button("🔄 Load a real test sample"):
             idx = int(np.random.randint(0, len(X_TEST)))
@@ -220,20 +335,31 @@ with tab_demo:
             st.json(
                 {
                     name: round(val, 4)
-                    for name, val in zip(FEATURE_NAMES, st.session_state.sample_features)
+                    for name, val in zip(
+                        FEATURE_NAMES,
+                        st.session_state.sample_features,
+                    )
                 }
             )
+
             st.caption(
                 f"True label (known only to the client): "
                 f"{CLASS_NAMES[st.session_state.true_label]}"
             )
 
         run_disabled = st.session_state.sample_features is None
-        run_clicked = st.button("🔐 Encrypt and predict", disabled=run_disabled, type="primary")
+
+        run_clicked = st.button(
+            "🔐 Encrypt and predict",
+            disabled=run_disabled,
+            type="primary",
+        )
 
     with col2:
         if run_clicked:
-            with st.spinner("Encryption → network → FHE inference → decryption..."):
+            with st.spinner(
+                "Encryption → network → FHE inference → decryption..."
+            ):
                 result = run_inference(
                     model_choice,
                     st.session_state.sample_features,
@@ -247,14 +373,23 @@ with tab_demo:
             st.code(result["server_log"], language=None)
 
             st.subheader("📊 Results")
+
             pred_label = CLASS_NAMES[result["prediction"]]
             true_label = CLASS_NAMES[result["true_label"]]
             correct = result["prediction"] == result["true_label"]
 
             c1, c2, c3 = st.columns(3)
+
             c1.metric("Prediction (decrypted)", pred_label)
-            c2.metric("True label", true_label, "✅ correct" if correct else "❌ incorrect")
-            c3.metric("End-to-end latency", f"{result['total_e2e']:.3f} s")
+            c2.metric(
+                "True label",
+                true_label,
+                "✅ correct" if correct else "❌ incorrect",
+            )
+            c3.metric(
+                "End-to-end latency",
+                f"{result['total_e2e']:.3f} s",
+            )
 
             st.caption(
                 f"Encrypted request: {result['req_size']:,} bytes  |  "
@@ -263,6 +398,7 @@ with tab_demo:
 
             st.markdown("---")
             st.subheader("Overall metrics per model")
+
             st.caption(
                 f"Computed at startup: plaintext and FHE-simulate accuracy on the full "
                 f"local test set; real FHE latency measured on only "
@@ -272,21 +408,35 @@ with tab_demo:
                 f"samples). These numbers illustrate the demo; they do not replace "
                 f"the Chapter 5 results."
             )
+
             rows = []
+
             for name, mm in REAL_METRICS.items():
                 rows.append(
                     {
-                        "Model": ("→ " if name == model_choice else "") + name,
-                        "Acc. plain": f"{mm['acc_plain']*100:.1f}%",
-                        "Acc. FHE-simulate": f"{mm['acc_fhe_simulate_full']*100:.1f}%",
+                        "Model": (
+                            ("→ " if name == model_choice else "") + name
+                        ),
+                        "Acc. plain": (
+                            f"{mm['acc_plain'] * 100:.1f}%"
+                        ),
+                        "Acc. FHE-simulate": (
+                            f"{mm['acc_fhe_simulate_full'] * 100:.1f}%"
+                        ),
                         "FHE latency (small sample)": (
-                            f"{mm['latency_fhe_mean_s']:.3f}s ± {mm['latency_fhe_std_s']:.3f}s"
+                            f"{mm['latency_fhe_mean_s']:.3f}s "
+                            f"± {mm['latency_fhe_std_s']:.3f}s"
                         ),
                     }
                 )
+
             st.table(rows)
+
         else:
-            st.info("Load a sample, then click \"Encrypt and predict\".")
+            st.info(
+                'Load a sample, then click "Encrypt and predict".'
+            )
+
 
 with tab_dashboard:
     render_dashboard()
