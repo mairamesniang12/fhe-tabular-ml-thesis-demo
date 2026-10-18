@@ -78,7 +78,7 @@ NTREES_DATA = _csv("sweep_ntrees.csv").rename(
 
 
 # ---- Part C: Deployment, differential privacy, and H1 ----
-DP_DATA = _csv("dp.csv")
+DP_DATA = _csv("dp_simulation_results.csv")
 DP_DATA = DP_DATA.rename(
     columns={
         "acc_dp_mean": "acc_mean",
