@@ -28,7 +28,7 @@ def _csv(name):
 
 
 # ---- Part A: Comparative benchmarking ----
-_fhe = _csv("part_a.csv").merge(
+_fhe = _csv("fhe_results_final.csv").merge(
     _csv("plain.csv")[["dataset", "model", "acc_plain"]],
     on=["dataset", "model"],
 )
