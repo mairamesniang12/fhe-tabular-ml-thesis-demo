@@ -93,6 +93,10 @@ def setup():
 STATE = setup()
 
 REAL_METRICS = STATE["real_metrics"]
+
+with st.expander("Diagnostic - Loaded Metrics"):
+    st.json(REAL_METRICS)
+    
 X_TEST = STATE["X_test"]
 Y_TEST = STATE["y_test"]
 FEATURE_NAMES = STATE["feature_names"]
